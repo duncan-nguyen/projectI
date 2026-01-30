@@ -1,10 +1,12 @@
-import streamlit as st
-import sys
 import os
+import sys
+
+import streamlit as st
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.pipeline import InformationExtractionPipeline
+from src.visualization import Visualizer
 
 st.set_page_config(page_title="Medical IE Demo", layout="wide")
 
@@ -15,21 +17,21 @@ st.sidebar.header("Configuration")
 ner_method = st.sidebar.selectbox(
     "Select NER Method",
     options=["gliner", "standard"],
-    format_func=lambda x: "GLiNER (General)" if x == "gliner" else "Standard NER (PhoBERT)"
+    format_func=lambda x: "GLiNER (General)"
+    if x == "gliner"
+    else "Standard NER (PhoBERT)",
 )
 
-device_option = st.sidebar.selectbox(
-    "Device",
-    options=["cpu", "cuda"],
-    index=0
-)
+device_option = st.sidebar.selectbox("Device", options=["cpu", "cuda"], index=0)
 
 default_text = "Bệnh nhân Nguyễn Văn A, 45 tuổi, trú tại Quận Cầu Giấy, Hà Nội. Ngày 20/05, bệnh nhân có biểu hiện sốt cao, ho khan và đau họng. Bệnh nhân đã đi đến Bệnh viện Bạch Mai để khám."
-input_text = st.text_area("Input Text", value=default_text, height=150)
+input_text = st.text_area("Input Text", value=default_text, height=300)
 
-@st.cache_resource(show_spinner="Loading models...")
+
+@st.cache_resource(show_spinner="Loading models ...")
 def get_pipeline(method, device):
     return InformationExtractionPipeline(ner_method=method, device=device)
+
 
 if st.button("Process Extraction", type="primary"):
     if not input_text.strip():
@@ -47,13 +49,15 @@ if st.button("Process Extraction", type="primary"):
                 if result.entities:
                     ent_data = [
                         {
-                            "Text": e.text, 
-                            "Label": e.label, 
-                            "Confidence": f"{e.confidence:.4f}" if e.confidence else "N/A"
+                            "Text": e.text,
+                            "Label": e.label,
+                            "Confidence": f"{e.confidence:.4f}"
+                            if e.confidence
+                            else "N/A",
                         }
                         for e in result.entities
                     ]
-                    st.dataframe(ent_data, use_container_width=True)
+                    st.dataframe(ent_data, width="stretch")
                 else:
                     st.info("No entities found.")
 
@@ -61,10 +65,24 @@ if st.button("Process Extraction", type="primary"):
                 if result.relations:
                     rel_data = [
                         {
-                            "Subject": next((e.text for e in result.entities if e.id == r.source_id), r.source_id),
+                            "Subject": next(
+                                (
+                                    e.text
+                                    for e in result.entities
+                                    if e.id == r.source_id
+                                ),
+                                r.source_id,
+                            ),
                             "Relation": r.relation_type,
-                            "Object": next((e.text for e in result.entities if e.id == r.target_id), r.target_id),
-                            "Evidence": r.evidence
+                            "Object": next(
+                                (
+                                    e.text
+                                    for e in result.entities
+                                    if e.id == r.target_id
+                                ),
+                                r.target_id,
+                            ),
+                            "Evidence": r.evidence,
                         }
                         for r in result.relations
                     ]
@@ -75,12 +93,17 @@ if st.button("Process Extraction", type="primary"):
             with col2:
                 st.subheader("Knowledge Graph")
                 if result.entities:
-                    from src.visualization import Visualizer
-                    mermaid_code = Visualizer.generate_knowledge_graph(result.entities, result.relations)
-                    st.markdown(f"```mermaid\n{mermaid_code}\n```")
-                else:
-                    st.markdown("No graph to display.")
-                    
+                    try:
+                        fig = Visualizer.create_networkx_graph(
+                            result.entities, result.relations
+                        )
+                        st.pyplot(fig, width="stretch")
+                    except Exception as e:
+                        st.warning(
+                            f"Install 'networkx' and 'matplotlib' to view network graph. Error: {e}"
+                        )
+                        st.info("pip install networkx matplotlib scipy")
+
             with st.expander("Show Preprocessing Details"):
                 st.markdown("**Cleaned Text:**")
                 st.write(result.cleaned_text)
@@ -90,4 +113,5 @@ if st.button("Process Extraction", type="primary"):
         except Exception as e:
             st.error(f"An error occurred: {e}")
             import traceback
+
             st.code(traceback.format_exc())

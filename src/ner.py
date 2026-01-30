@@ -64,15 +64,46 @@ class StandardNER(BaseNER):
 
         results = self.nlp(input_text)
         entities = []
+
+        # Track current position for manual offset calculation if needed
+        current_pos = 0
+
         for idx, res in enumerate(results):
             label = res["entity_group"]
+            word = res["word"]
+            start = res.get("start")
+            end = res.get("end")
+
+            # Fix for slow tokenizers (like PhoBERT's) not returning offsets in pipeline
+            if start is None or end is None:
+                # Naive search for the word in the text starting from current_pos
+                # Handle possible mismatch in spacing/underscores if necessary,
+                # but direct find is a reasonable fallback
+                clean_word = word.strip().replace("_", " ")
+                # Also consider the input text might have underscores if it was pre-segmented
+
+                # Try finding exact word
+                found_idx = input_text.find(word, current_pos)
+                if found_idx == -1:
+                    # Try finding with spaces instead of underscores
+                    found_idx = input_text.find(clean_word, current_pos)
+
+                if found_idx != -1:
+                    start = found_idx
+                    end = found_idx + len(word)  # approximation
+                    # Update current_pos to avoid finding same entity again
+                    current_pos = end
+                else:
+                    start = 0
+                    end = 0
+
             entities.append(
                 Entity(
                     id=f"ent_{idx}",
-                    text=res["word"],
+                    text=word,
                     label=label,
-                    start_char=res["start"],
-                    end_char=res["end"],
+                    start_char=start,
+                    end_char=end,
                     confidence=res["score"],
                 )
             )
